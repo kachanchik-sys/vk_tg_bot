@@ -1,0 +1,3 @@
+aiogram
+vk_api
+sqlalchemy
