@@ -43,7 +43,7 @@ A: https://t.me/VKpost_to_tg_bot
 
 ## TODO
 - [ ] CMD script for auto install on windows
-- [+] Personal time in GroupUser
+- [x] Personal time in GroupUser
 - [ ] Manual parse vk by user
 - [ ] Parse music, files and videos
 - [ ] Admin panel 
