@@ -181,7 +181,7 @@ class Database:
             raise DataBaseUsersGroupError(
                 f'The user "{user_id}" is not a member of this group "{domain}"')
         self.sql_session.query(UsersGroup)\
-            .filter(UsersGroup.domain == domain and UsersGroup.user_id == user_id).delete(False)
+            .filter(UsersGroup.domain == domain).filter(UsersGroup.user_id == user_id).delete(False)
         self.sql_session.commit()
 
     def get_user(self, user_id: int) -> DataBaseUser:
@@ -311,7 +311,7 @@ class Database:
             raise DataBaseUserError(user_id)
         if not self.is_group_has_member(domain, user_id):
             raise DataBaseUsersGroupError(f"Group {domain} has not user with id {user_id}")
-        user_group: UsersGroup = self.sql_session.query(UsersGroup).filter(UsersGroup.domain == domain and UsersGroup.user_id == user_id).first()
+        user_group: UsersGroup = self.sql_session.query(UsersGroup).filter(UsersGroup.domain == domain).filter(UsersGroup.user_id == user_id).first()
         if user_group.last_update_date < new_date:
             user_group.last_update_date = new_date
             self.sql_session.commit()

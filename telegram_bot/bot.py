@@ -175,7 +175,7 @@ class TelegramBot:
         user_id: int = message.from_user.id
         if not self.database.is_user_exists(user_id):
             await message.reply('Вы не являетесь пользователем бота, вам просто нечего обновлять')
-            return
+            return  
         await message.answer("Ожидайте...")
         # Get info about user from database
         user: DataBaseUser = self.database.get_user(user_id)
