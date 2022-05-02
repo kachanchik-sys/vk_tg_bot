@@ -39,11 +39,11 @@ A: Bot parses each group in the database every 10 minutes.
 - Q: Is it possible to change this delay?\
 A: Yes! You can change this parameter in settings. Set the `update_timer` variable to a value in seconds .
 - Q: Where can I see an example of how the bot actually works?\
-A: @VKpost_to_tg_bot
+A: https://t.me/VKpost_to_tg_bot
 
 ## TODO
 - [ ] CMD script for auto install on windows
-- [ ] Personal time in GroupUser
+- [+] Personal time in GroupUser
 - [ ] Manual parse vk by user
 - [ ] Parse music, files and videos
 - [ ] Admin panel 
