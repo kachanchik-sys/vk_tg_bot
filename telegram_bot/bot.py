@@ -176,7 +176,7 @@ class TelegramBot:
         if not self.database.is_user_exists(user_id):
             await message.reply('Вы не являетесь пользователем бота, вам просто нечего обновлять')
             return  
-        await message.answer("Ожидайте...")
+        msg = await message.answer("Ожидайте...")
         # Get info about user from database
         user: DataBaseUser = self.database.get_user(user_id)
         # Initializes the counter of updated groups (may differ from the total number of groups in the database)
@@ -185,6 +185,9 @@ class TelegramBot:
         for user_group in user.groups:
             # Get info about group from database
             db_group: DataBaseGroup = self.database.get_group(user_group.domain)  
+
+            await msg.delete()
+            msg = await message.answer(f"Провереряю '{db_group.group_name}'")
             # Get post from vk for telegram
             telegram_post: TelegramPost = await self._get_post(db_group)
             # Check fresh post
@@ -195,6 +198,7 @@ class TelegramBot:
                 self.database.update_user_group_date(user_id, user_group.domain, telegram_post.date)
                 # Update counter
                 update_counter += 1
+        await msg.delete()
         await message.answer(f"Обновлено {update_counter} групп")
         logging.info(f"User '{user_id}' manual update {update_counter} groups")
 
