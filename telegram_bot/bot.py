@@ -353,7 +353,7 @@ class TelegramBot:
                 # Compares if the user received the same post (for example, if he recently subscribed to a group and received as an example the last post from its wall)
                 # If anyone is interested, yes, i love long line coments and code >:D
                 user_group: DataBaseUserGroup = list(filter(lambda x: x.domain == group.domain, self.database.get_user(user).groups))[0]
-                if not user_group.last_update_date <= telegram_post.date:
+                if user_group.last_update_date >= telegram_post.date:
                     continue
                 try:
                     await self._send_post(telegram_post.texts, telegram_post.media, user)
