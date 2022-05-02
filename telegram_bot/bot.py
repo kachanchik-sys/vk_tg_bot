@@ -17,7 +17,7 @@ from aiogram.types.input_media import MediaGroup
 
 from modules import database
 from modules import vk_parser
-from data_classes import DataBaseGroup, TelegramPost, VkGroup, VkPost
+from data_classes import DataBaseGroup, TelegramPost, VkGroup, VkPost, DataBaseUserGroup
 from tools import split_text
 
 
@@ -227,6 +227,7 @@ class TelegramBot:
         group = self.database.get_group(group_domain)
         telegram_post = await self._get_post(group, True)
         await self._send_post(telegram_post.texts, telegram_post.media, user_id)
+        self.database.update_user_group_date(user_id, group_domain, telegram_post.date)
         await state.finish()
 
     async def __on_del_group_state(self, message: types.Message, state: FSMContext) -> None:
@@ -237,7 +238,7 @@ class TelegramBot:
             state (FSMContext): current state of bot
         """
         user_id: int = message.from_user.id
-        groups: List[str] = self.database.get_user(user_id).groups
+        groups: List[DataBaseUserGroup] = self.database.get_user(user_id).groups
 
         if not message.text.isdigit():
             await message.answer(
@@ -250,8 +251,8 @@ class TelegramBot:
             await message.reply(f'Вы ввели число которого нет в списке\nПопробуйте еще')
             return
 
-        logging.info(f"User '{user_id}' delete '{groups[group_index]}' group")
-        self.database.del_member_of_group(groups[group_index], user_id)
+        logging.info(f"User '{user_id}' delete '{groups[group_index].domain}' group")
+        self.database.del_member_of_group(groups[group_index].domain, user_id)
         await message.reply('Группа успешно удалена', reply_markup=Keyboard.main_menu)
         await state.finish()
 
@@ -333,14 +334,21 @@ class TelegramBot:
         groups = self.database.get_all_groups()
         for group in groups:
             if not group.members: # If group without members
+                self.database.del_group(group.domain)
                 continue
+
             telegram_post: TelegramPost = await self._get_post(group)
             if telegram_post.date <= group.post_date:
                 continue
             update_counter += 1
+
             for user in group.members:
+                user_group: DataBaseUserGroup = list(filter(lambda x: x.domain == group.domain, self.database.get_user(user).groups))[0]
+                if not user_group.last_update_date <= telegram_post.date:
+                    continue
                 try:
                     await self._send_post(telegram_post.texts, telegram_post.media, user)
+                    #self.database.update_user_group_date(user, group.domain, telegram_post.date)
                 except aiogram.utils.exceptions.BotBlocked:
                     if self.database.is_user_exists(user):
                         logging.warning(f'Bot blocked by user {user}. The user will be deleted from the database')

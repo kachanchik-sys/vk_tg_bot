@@ -1,6 +1,4 @@
-import configparser
 from telegram_bot.bot import TelegramBot
-import os
 import logging
 
 logging.basicConfig(

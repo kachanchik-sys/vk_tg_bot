@@ -4,7 +4,6 @@ from typing import Tuple, List, Optional, Dict, Union
 from vk_api import vk_api
 from data_classes import VkGroup, VkLink, VkPost, VkVideo
 import requests
-import json
 
 class VkGroupInfoError(Exception):
     def __init__(self, message: str = None) -> None:

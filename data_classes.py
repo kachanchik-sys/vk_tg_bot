@@ -60,12 +60,17 @@ class DataBaseGroup:
     members: List[int]
 
 @dataclasses.dataclass
+class DataBaseUserGroup:
+    domain: str
+    last_update_date: int
+
+@dataclasses.dataclass
 class DataBaseUser:
     """
     Information about user from database
     """
     user_id: int
-    groups : Optional[List[str]]
+    groups : Optional[List[DataBaseUserGroup]]
 
 @dataclasses.dataclass
 class TelegramPost:

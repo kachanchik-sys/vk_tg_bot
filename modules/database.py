@@ -1,4 +1,3 @@
-from tkinter import N
 from typing import List
 
 from sqlalchemy import Column, ForeignKey, Integer, String
@@ -6,7 +5,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 import logging
-from data_classes import DataBaseGroup, DataBaseUser
+
+from data_classes import DataBaseGroup, DataBaseUser, DataBaseUserGroup
 
 
 Base = declarative_base()
@@ -58,6 +58,7 @@ class UsersGroup(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('Users.user_id'))
     domain = Column(Integer, ForeignKey('Groups.domain'))
+    last_update_date = Column(Integer, nullable=False)
 
 
 class Groups(Base):
@@ -153,7 +154,7 @@ class Database:
         if self.is_group_has_member(domain, user_id):
             raise DataBaseUsersGroupError(
                 f'The user "{user_id}" is already a member of this group "{domain}"')
-        self.sql_session.add(UsersGroup(domain=domain, user_id=user_id))
+        self.sql_session.add(UsersGroup(domain=domain, user_id=user_id, last_update_date=0))
         self.sql_session.commit()
 
     def del_member_of_group(self, domain: str, user_id: int):
@@ -196,12 +197,10 @@ class Database:
         Returns:
             DataBaseUser: user object with arguments "user_id" and "groups"
         """
-        if not isinstance(user_id, int):
-            raise DataBaseTypeError(user_id, int)
         if not self.is_user_exists(user_id):
             raise DataBaseUserError(user_id)
         user_groups = list(map(
-            lambda raw_group: raw_group.domain,
+            lambda raw_group: DataBaseUserGroup(raw_group.domain, raw_group.last_update_date),
             self.sql_session.query(UsersGroup).filter(
                 UsersGroup.user_id == user_id).all()
         ))
@@ -251,7 +250,6 @@ class Database:
         for group in groups:
             yield self.get_group(group)
 
-
     def get_all_users(self) -> List[DataBaseUser]:
         """
         Return all existed in bot's database groups with information 
@@ -284,7 +282,7 @@ class Database:
         if not self.is_group_exists(domain):
             raise DataBaseGroupError(domain)
 
-        group = self.sql_session.query(Groups).filter(
+        group: Groups = self.sql_session.query(Groups).filter(
             Groups.domain == domain).first()
         if not new_post_date == group.date_of_last_post:
             group.date_of_last_post = new_post_date
@@ -292,6 +290,20 @@ class Database:
         if not new_group_name == group.name:
             group.name = new_group_name
             self.sql_session.commit()
+
+    def update_user_group_date(self, user_id: int, domain: str, new_date: int) -> None:
+        if not self.is_group_exists(domain):
+            raise DataBaseGroupError(domain)
+        if not self.is_user_exists(user_id):
+            raise DataBaseUserError(user_id)
+        if not self.is_group_has_member(domain, user_id):
+            raise DataBaseUsersGroupError(f"Group {domain} has not user with id {user_id}")
+        user_group: UsersGroup = self.sql_session.query(UsersGroup).filter(UsersGroup.domain == domain and UsersGroup.user_id == user_id).first()
+        if user_group.last_update_date < new_date:
+            user_group.last_update_date = new_date
+            self.sql_session.commit()
+
+
 
     def del_user(self, user_id: int) -> None:
         """
@@ -309,7 +321,19 @@ class Database:
             .filter(Users.user_id == user_id).delete(False)
         self.sql_session.commit()
         
+    def del_group(self, domain: str) -> None:
+        """
+        Delete group from database
 
+        Args:
+            user_id (int): current id of user
+        """
+        if not self.is_group_exists(domain):
+            raise DataBaseGroupError(domain, f'Group "{domain}" does not exists')
+        if self.sql_session.query(UsersGroup).filter(UsersGroup.domain == domain).all():
+            raise DataBaseGroupError(domain, "Group has members and can not deleted")
+        self.sql_session.query(Groups).filter(Groups.domain == domain).delete(False)
+        self.sql_session.commit()
 
 if __name__ == "__main__":
 
@@ -319,8 +343,20 @@ if __name__ == "__main__":
         datefmt='%H:%M:%S',
     )
     log = logging.getLogger()
-    db = Database('sqlite:///databases/test.db')
-    db.del_user(536210259)
+    db = Database('sqlite:///databases/tet.db')
+    user_id = 1234
+    domain = "baobab"
+    if not db.is_group_exists(domain):
+        db.create_group(domain, 2, domain)
+    if not db.is_user_exists(user_id):
+        db.create_user(user_id)
+    if not db.is_group_has_member(domain, user_id):
+        db.add_member_to_group(domain, user_id)
+    print(db.get_user(user_id))
+    db.update_user_group_date(user_id, domain, 123456789)
+
+    
+
 
 else:
     log = logging.getLogger()
