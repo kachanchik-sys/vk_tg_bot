@@ -44,7 +44,7 @@ A: https://t.me/VKpost_to_tg_bot
 ## TODO
 - [ ] CMD script for auto install on windows
 - [x] Personal time in GroupUser
-- [ ] Manual parse vk by user
+- [x] Manual parse vk by user
 - [ ] Parse music, files and videos
 - [ ] Admin panel 
   - [ ] Kill and reboot bot

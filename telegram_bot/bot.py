@@ -38,6 +38,7 @@ class Keyboard:
     main_menu = ReplyKeyboardMarkup(resize_keyboard=True)
     main_menu.insert(KeyboardButton('Добавить группу'))
     main_menu.insert(KeyboardButton('Удалить группу'))
+    main_menu.add(KeyboardButton('Проверить обновления'))
 
     # Set keyboard for states
     cancel = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -72,6 +73,8 @@ class TelegramBot:
             self.__on_add_group_button, regexp=r'^([Дд]обавить группу)$')
         self.bot_dispatcher.register_message_handler(
             self.__on_del_group_button, regexp=r'^([Уу]далить группу)$')
+        self.bot_dispatcher.register_message_handler(
+            self.__on_check_update_button, regexp=r'^([Пп]роверить обновления)$')
         self.bot_dispatcher.register_message_handler(
             self.__on_cancel_button, regexp=r'^([Оо]тмена)$') # Registre cancel command in main menu
         self.bot_dispatcher.register_message_handler(
@@ -161,6 +164,39 @@ class TelegramBot:
             disable_web_page_preview=True
         )
         await States.del_group.set()
+
+    async def __on_check_update_button(self, message: types.Message) -> None:
+        """
+        Check groups updates manualy only for current user
+
+        Args:
+            message (types.Message): message from user
+        """
+        user_id: int = message.from_user.id
+        if not self.database.is_user_exists(user_id):
+            await message.reply('Вы не являетесь пользователем бота, вам просто нечего обновлять')
+            return
+        await message.answer("Ожидайте...")
+        # Get info about user from database
+        user: DataBaseUser = self.database.get_user(user_id)
+        # Initializes the counter of updated groups (may differ from the total number of groups in the database)
+        update_counter: int = 0
+
+        for user_group in user.groups:
+            # Get info about group from database
+            db_group: DataBaseGroup = self.database.get_group(user_group.domain)  
+            # Get post from vk for telegram
+            telegram_post: TelegramPost = await self._get_post(db_group)
+            # Check fresh post
+            if telegram_post.date > user_group.last_update_date:
+                # Send post to user
+                await self._send_post(telegram_post.texts, telegram_post.media, user_id)
+                # Updates the date of the last post received by the user
+                self.database.update_user_group_date(user_id, user_group.domain, telegram_post.date)
+                # Update counter
+                update_counter += 1
+        await message.answer(f"Обновлено {update_counter} групп")
+        logging.info(f"User '{user_id}' manual update {update_counter} groups")
 
     async def __on_cancel_button(self, message: types.Message, state: FSMContext) -> None:
         """
