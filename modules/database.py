@@ -292,6 +292,19 @@ class Database:
             self.sql_session.commit()
 
     def update_user_group_date(self, user_id: int, domain: str, new_date: int) -> None:
+        """
+        Updates the date of the last group post received by the user 
+
+        Args:
+            user_id (int): Telegram id of user
+            domain (str): Domain of vk group
+            new_date (int): date received by the user
+
+        Raises:
+            DataBaseGroupError: Group does not exists in database
+            DataBaseUserError: User does not exists in database
+            DataBaseUsersGroup: User is not subscribed to a group
+        """
         if not self.is_group_exists(domain):
             raise DataBaseGroupError(domain)
         if not self.is_user_exists(user_id):

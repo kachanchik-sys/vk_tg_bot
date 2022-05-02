@@ -17,7 +17,7 @@ from aiogram.types.input_media import MediaGroup
 
 from modules import database
 from modules import vk_parser
-from data_classes import DataBaseGroup, TelegramPost, VkGroup, VkPost, DataBaseUserGroup
+from data_classes import DataBaseGroup, DataBaseUser, TelegramPost, VkGroup, VkPost, DataBaseUserGroup
 from tools import split_text
 
 
@@ -330,26 +330,36 @@ class TelegramBot:
         """
         Sends each user in the database a latest post from the VK groups to which he is subscribed
         """
+        # Initializes the counter of updated groups (may differ from the total number of groups in the database)
         update_counter: int = 0
-        groups = self.database.get_all_groups()
+        groups: List[DataBaseGroup] = self.database.get_all_groups()
         for group in groups:
-            if not group.members: # If group without members
+            
+            # Deletes a group from the database if it has no users
+            if not group.members:
                 self.database.del_group(group.domain)
                 continue
-
+            
+            # Get post from group and parse them
             telegram_post: TelegramPost = await self._get_post(group)
+            # Skips sending a post if it has already been sent before
             if telegram_post.date <= group.post_date:
                 continue
+            # Update counter (needed for a pretty line in the logs)
             update_counter += 1
-
+            
+            # Send post to all member of group
             for user in group.members:
+                # Compares if the user received the same post (for example, if he recently subscribed to a group and received as an example the last post from its wall)
+                # If anyone is interested, yes, i love long line coments and code >:D
                 user_group: DataBaseUserGroup = list(filter(lambda x: x.domain == group.domain, self.database.get_user(user).groups))[0]
                 if not user_group.last_update_date <= telegram_post.date:
                     continue
                 try:
                     await self._send_post(telegram_post.texts, telegram_post.media, user)
-                    #self.database.update_user_group_date(user, group.domain, telegram_post.date)
+                    self.database.update_user_group_date(user, group.domain, telegram_post.date)
                 except aiogram.utils.exceptions.BotBlocked:
+                    # Delete user if it stop and block bot in telegram
                     if self.database.is_user_exists(user):
                         logging.warning(f'Bot blocked by user {user}. The user will be deleted from the database')
                         self.database.del_user(user)
@@ -386,20 +396,22 @@ class TelegramBot:
         ))[0]
 
         # Get bot admin name
-        # Note: If chat does not exist there will be exception (For example if you run bot first time)
+        # Note: If chat does not exist there will be exception (For example if you run bot first time without chat)
         try:
+            # Get info about chat of admin
             admin_chat: Chat = loop.run_until_complete(asyncio.gather(
                 telegram_bot.bot_api.get_chat(admin_id)
             ))[0]
+            # Get admin's username
             admin_username: str = admin_chat.username
+            # Send message to admin
+            logging.info(f'Try send message to bot`s admin "{admin_username}"')
+            loop.run_until_complete(telegram_bot.bot_api.send_message(admin_id, 'Bot is running'))
         except:
-            admin_username: str = str(admin_id)
-        # Send message to admin
-        logging.info(f'Try send message to bot`s admin "{admin_username}"')
-        loop.run_until_complete(telegram_bot.bot_api.send_message(admin_id, 'Bot is running'))
+            logging.warning("Bot can not send launch message to admin. It's normal if you launch bot first time and don't start chat with him")
 
         # Launch bot poling and infinit vk parser loop
-        logging.info(f'Launch bot "{bot_info.username}"')
+        logging.info(f'Launch bot "@{bot_info.username}"')
         loop.create_task(telegram_bot.bot_dispatcher.start_polling(timeout=40, relax=0.5))
         loop.create_task(telegram_bot._launch_vk_update(update_timer))
         loop.run_forever()
@@ -414,15 +426,25 @@ class TelegramBot:
         # Start infinite updating loop
         while True:
             try:
+                # Run update. Check all vk groups, parse and send to users to telegram
                 logging.info("Update...")
                 await self.posting()    
+                # Calc time of next update
                 next_update_time = datetime.fromtimestamp(time.time() + update_timer).time()
                 logging.info(f"Next update in '{next_update_time.hour}:{next_update_time.minute}:{next_update_time.second}'")
+                # Delay of update
                 await asyncio.sleep(update_timer)
             except Exception as e:
+                # I don't remember why it's needed. But I'll leave it just in case.
                 logging.error(e)
 
     async def __on_comand_spam(self, message: types.Message):
+        """
+        Launch when admin type command /spam for sending message to all bot users
+
+        Args:
+            message (types.Message): message from admin with /spam command as text
+        """
         await message.answer('Ожидаю текста для рассылки')
         await States.mass_mail.set()
 
@@ -434,9 +456,11 @@ class TelegramBot:
             message (types.Message): user message for spam
             state (FSMContext): bot's state
         """
-        users = self.database.get_all_users()
+        # Get list of all users in database
+        users: List[DataBaseUser] = self.database.get_all_users()
         for user in users:
             try:
+                # Sends a full copy of the message to the user on behalf of the bot
                 await message.send_copy(user.user_id)
             except:
                 logging.error(f'Cant send to {user.user_id}')
