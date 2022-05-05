@@ -2,7 +2,6 @@ import asyncio
 import configparser
 import logging
 import re
-from tkinter.messagebox import NO
 import urllib.parse
 from typing import List, Optional, Tuple
 from datetime import datetime
