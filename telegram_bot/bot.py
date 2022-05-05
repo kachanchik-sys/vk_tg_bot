@@ -542,7 +542,6 @@ class TelegramBot:
             message (types.Message): message from admin
         """
         await message.answer("Отключаюсь")
-        await self.bot_dispatcher.bot.close_bot() # Stop bot instance. Maybe...
         # Stop and close infinit loop from run method
         self.loop.stop()
         self.loop.close()
@@ -554,4 +553,4 @@ if __name__ == '__main__':
         #   time.sleep(10)
         pass
 
-        
+            
