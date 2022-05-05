@@ -161,8 +161,8 @@ class TelegramBot:
             return
 
         groups_list: List[str] = list()
-        for index, group_domain in enumerate(user_groups, 1): # Gen list of vk groups of user with html markup
-            group = self.database.get_group(group_domain)
+        for index, user_group in enumerate(user_groups, 1): # Gen list of vk groups of user with html markup
+            group = self.database.get_group(user_group.domain)
             groups_list.append(f"""{index}. '<a href="https://vk.com/{group.domain}">{group.group_name}</a>'""")
 
         msg: str = f"\n\nВведите номер группы из списка которую хотите удалить\
