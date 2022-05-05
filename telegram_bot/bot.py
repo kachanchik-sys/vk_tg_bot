@@ -28,6 +28,7 @@ class States(StatesGroup):
     add_group = State()
     del_group = State()
     mass_mail = State()
+    shutdown = State()
 
 
 class Keyboard:
@@ -43,6 +44,11 @@ class Keyboard:
     # Set keyboard for states
     cancel = ReplyKeyboardMarkup(resize_keyboard=True)
     cancel.insert(KeyboardButton('Отмена'))
+
+    yes_or_no = ReplyKeyboardMarkup(resize_keyboard=True)
+    yes_or_no.insert(KeyboardButton('Да'))
+    yes_or_no.insert(KeyboardButton('Нет'))
+
 
 
 class TelegramBot:
@@ -97,6 +103,8 @@ class TelegramBot:
             self.__on_del_group_state, state=States.del_group)
         self.bot_dispatcher.register_message_handler(
             self.__on_state_spam, state=States.mass_mail)
+        self.bot_dispatcher.register_message_handler(
+            self.__on_shutdown_state, state=States.shutdown)
 
 
     async def __send_help_message(self, message: types.Message) -> None:
@@ -541,11 +549,21 @@ class TelegramBot:
         Args:
             message (types.Message): message from admin
         """
-        await message.answer("Отключаюсь")
-        # Stop and close infinit loop from run method
-        self.loop.stop()
-        self.loop.close()
+        await message.reply("Вы точно уверены?", reply_markup=Keyboard.yes_or_no)
+        await States.shutdown.set()
         
+    
+    async def __on_shutdown_state(self, message: types.Message, state: FSMContext) -> None:
+        if message.text.lower() != "да":
+            await message.answer("Отмена", reply_markup=Keyboard.main_menu)
+        else:
+            # Stop and close infinit loop from run method
+            await message.answer("Отключаюсь", reply_markup=Keyboard.main_menu)
+            logging.info("Bot stopping by admin command")
+            self.loop.stop()
+            self.loop.close()
+        await state.finish()
+
 
 if __name__ == '__main__':
         # aiogram.utils.exceptions.NetworkError:
