@@ -47,7 +47,8 @@ A: https://t.me/VKpost_to_tg_bot
 - [x] Manual parse vk by user
 - [ ] Parse music, files and videos
 - [ ] Admin panel 
-  - [ ] Kill and reboot bot
+  - [x] Kill bot
+  - [ ] Reboot bot
   - [ ] Get logs
   - [ ] Get database
 

@@ -2,6 +2,7 @@ import asyncio
 import configparser
 import logging
 import re
+from tkinter.messagebox import NO
 import urllib.parse
 from typing import List, Optional, Tuple
 from datetime import datetime
@@ -67,6 +68,8 @@ class TelegramBot:
         """
         Registrate commands and buttons handlers from bot's main menu
         """
+        is_admin = lambda msg: msg.from_user.id == self.admin_id # Check on bot admin id from settings
+
         self.bot_dispatcher.register_message_handler(
             self.__send_help_message, commands=['help', 'start'])
         self.bot_dispatcher.register_message_handler(
@@ -78,9 +81,9 @@ class TelegramBot:
         self.bot_dispatcher.register_message_handler(
             self.__on_cancel_button, regexp=r'^([Оо]тмена)$') # Registre cancel command in main menu
         self.bot_dispatcher.register_message_handler(
-            self.__on_comand_spam, 
-            lambda msg: msg.from_user.id == self.admin_id, # Check on bot admin id from settings
-            commands=['spam'])
+            self.__on_comand_spam, is_admin, commands=['spam'])
+        self.bot_dispatcher.register_message_handler(
+            self.__on_comand_shutdown, is_admin, commands=['shutdown'])
 
 
     def _reg_states_handlers(self) -> None:
@@ -429,6 +432,7 @@ class TelegramBot:
         logging.info('Init bot class')
         telegram_bot = TelegramBot(database_path, telegram_token, vk_token, admin_id)
         loop = asyncio.get_event_loop()
+        telegram_bot.loop = loop # Need for shutdown bot by method
 
         # Get bot name
         bot_info: User = loop.run_until_complete(asyncio.gather(
@@ -531,6 +535,19 @@ class TelegramBot:
         splited_post_text: List[str] = split_text(post_text, limit, self.post_char_limit)
         return TelegramPost(vk_post.id, full_group_name, splited_post_text, post_media)
 
+    async def __on_comand_shutdown(self, message: types.Message) -> None:
+        """
+        Stop bot from telegram by shutdown command
+
+        Args:
+            message (types.Message): message from admin
+        """
+        await message.answer("Отключаюсь")
+        await self.bot_dispatcher.bot.close_bot() # Stop bot instance. Maybe...
+        # Stop and close infinit loop from run method
+        self.loop.stop()
+        self.loop.close()
+        
 
 if __name__ == '__main__':
         # aiogram.utils.exceptions.NetworkError:
