@@ -27,7 +27,8 @@ class States(StatesGroup):
     """
     add_group = State()
     del_group = State()
-    mass_mail = State()
+    spam = State()
+    accept_spam = State()
     shutdown = State()
 
 
@@ -57,6 +58,18 @@ class TelegramBot:
         self.post_char_limit = 4000 
         self.capture_char_limit = 1000
 
+        # set available commands, need only for /commands
+        self.user_commands = {
+            "/start":"Отправляет преветственное сообщение",
+            "/me":"Отправляет хранящуюся о вас информацию в боте",
+            "/reset":"Стирает вас из базы данных обнуляя все ваши подписки"
+        }
+        self.admin_commands = {
+            "/shutdown":"Останавливает бота",
+            "/panel":"Панель управления ботом",
+            "/spam":"Массовая рассылка сообщения всем пользователям"
+        }
+
         # Creates instances
         self.admin_id = admin_id
         self.database = database.Database(database_path)
@@ -78,6 +91,8 @@ class TelegramBot:
         self.bot_dispatcher.register_message_handler(
             self.__send_help_message, commands=['help', 'start'])
         self.bot_dispatcher.register_message_handler(
+            self.send_available_commands, commands=['commands'])
+        self.bot_dispatcher.register_message_handler(
             self.__on_add_group_button, regexp=r'^([Дд]обавить группу)$')
         self.bot_dispatcher.register_message_handler(
             self.__on_del_group_button, regexp=r'^([Уу]далить группу)$')
@@ -86,9 +101,9 @@ class TelegramBot:
         self.bot_dispatcher.register_message_handler(
             self.__on_cancel_button, regexp=r'^([Оо]тмена)$') # Registre cancel command in main menu
         self.bot_dispatcher.register_message_handler(
-            self.__on_comand_spam, is_admin, commands=['spam'])
+            self.__on_command_spam, is_admin, commands=['spam'])
         self.bot_dispatcher.register_message_handler(
-            self.__on_comand_shutdown, is_admin, commands=['shutdown'])
+            self.__on_command_shutdown, is_admin, commands=['shutdown'])
 
 
     def _reg_states_handlers(self) -> None:
@@ -102,9 +117,22 @@ class TelegramBot:
         self.bot_dispatcher.register_message_handler(
             self.__on_del_group_state, state=States.del_group)
         self.bot_dispatcher.register_message_handler(
-            self.__on_state_spam, state=States.mass_mail)
+            self.__on_state_spam, state=States.spam)
+        self.bot_dispatcher.register_message_handler(
+            self.__on_state_accept_spam, state=States.accept_spam)
         self.bot_dispatcher.register_message_handler(
             self.__on_shutdown_state, state=States.shutdown)
+
+    async def send_available_commands(self, message: types.Message) -> None:
+        msg_text: str = f"Вам доступны текущие комманды\n\nПользовательские:\n"
+        for key in self.user_commands.keys():
+            msg_text += f"{key} - {self.user_commands.get(key)}\n"
+        if message.from_user.id == self.admin_id:
+            msg_text += "\nАдминские:\n"
+            for key in self.admin_commands.keys():
+                msg_text += f"{key} - {self.admin_commands.get(key)}\n"
+        await message.answer(msg_text)
+        
 
 
     async def __send_help_message(self, message: types.Message) -> None:
@@ -489,15 +517,51 @@ class TelegramBot:
                 # I don't remember why it's needed. But I'll leave it just in case.
                 logging.error(e)
 
-    async def __on_comand_spam(self, message: types.Message):
+    async def __on_command_spam(self, message: types.Message, state: FSMContext):
         """
         Launch when admin type command /spam for sending message to all bot users
 
         Args:
             message (types.Message): message from admin with /spam command as text
         """
-        await message.answer('Ожидаю текста для рассылки')
-        await States.mass_mail.set()
+        spam_msg: Optional[types.Message] = None
+        if message.reply_to_message:
+            spam_msg = message.reply_to_message
+        elif message.text.strip() != "/spam":
+            message.text = message.text.replace("/spam", "")
+            spam_msg = message
+
+        if spam_msg:
+            msg = await spam_msg.send_copy(message.from_user.id)
+            await msg.reply("Вы уверены что хотите отправить это сообщение всем своим пользователям?", reply_markup=Keyboard.yes_or_no)
+            async with state.proxy() as data:
+                data['msg_id'] = msg.message_id
+            await States.accept_spam.set()
+            return
+
+        await message.answer('Ожидаю текста для рассылки', reply_markup=Keyboard.cancel)
+        await States.spam.set()
+
+    async def __on_state_accept_spam(self, message: types.Message, state: FSMContext):
+        if message.text.lower() == "да":
+            await message.answer("Отправляю")
+            user_id = message.from_user.id
+            async with state.proxy() as data:
+                spam_msg_id: int = data['msg_id'] 
+            # Get list of all users in database
+            users: List[DataBaseUser] = self.database.get_all_users()
+            for user in users:
+                if user.user_id == user_id:
+                    pass
+                try:
+                    # Sends a full copy of the message to the user on behalf of the bot
+                    await self.bot_api.copy_message(user.user_id, user_id, spam_msg_id)
+                except:
+                    logging.error(f'Cant send to {user.user_id}')
+            await message.answer("Отправленно", reply_markup=Keyboard.main_menu)
+        else:
+            await message.answer("Отмена", reply_markup=Keyboard.main_menu)
+        await state.finish()
 
     async def __on_state_spam(self, message: types.Message, state: FSMContext):
         """
@@ -507,16 +571,12 @@ class TelegramBot:
             message (types.Message): user message for spam
             state (FSMContext): bot's state
         """
-        # Get list of all users in database
-        users: List[DataBaseUser] = self.database.get_all_users()
-        for user in users:
-            try:
-                # Sends a full copy of the message to the user on behalf of the bot
-                await message.send_copy(user.user_id)
-            except:
-                logging.error(f'Cant send to {user.user_id}')
-        await state.finish()
-
+        msg = await message.send_copy(message.from_user.id)
+        await msg.reply("Вы уверены что хотите отправить это сообщение всем своим пользователям?", reply_markup=Keyboard.yes_or_no)
+        async with state.proxy() as data:
+            data['msg_id'] = message.message_id
+        await States.accept_spam.set()
+        
     async def _get_post(self, group: DataBaseGroup, pinned: bool = False) -> TelegramPost:
         """
         Get post from vk via vk_parser
@@ -542,7 +602,7 @@ class TelegramBot:
         splited_post_text: List[str] = split_text(post_text, limit, self.post_char_limit)
         return TelegramPost(vk_post.id, full_group_name, splited_post_text, post_media)
 
-    async def __on_comand_shutdown(self, message: types.Message) -> None:
+    async def __on_command_shutdown(self, message: types.Message) -> None:
         """
         Stop bot from telegram by shutdown command
 
