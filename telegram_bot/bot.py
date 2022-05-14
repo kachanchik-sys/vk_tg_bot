@@ -552,7 +552,7 @@ class TelegramBot:
             users: List[DataBaseUser] = self.database.get_all_users()
             for user in users:
                 if user.user_id == user_id:
-                    pass
+                    continue
                 try:
                     # Sends a full copy of the message to the user on behalf of the bot
                     await self.bot_api.copy_message(user.user_id, user_id, spam_msg_id)
