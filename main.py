@@ -8,5 +8,5 @@ logging.basicConfig(
 )
  
 if __name__ == "__main__":
-    ini_file_path = "settings_dev.ini"
+    ini_file_path = "settings.ini"
     TelegramBot.run(ini_file_path)

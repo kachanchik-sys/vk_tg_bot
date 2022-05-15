@@ -27,9 +27,10 @@ class States(StatesGroup):
     """
     add_group = State()
     del_group = State()
-    spam = State()
-    accept_spam = State()
+    pre_announcement = State()
+    announcement = State()
     shutdown = State()
+    reset = State()
 
 
 class Keyboard:
@@ -67,7 +68,7 @@ class TelegramBot:
         self.admin_commands = {
             "/shutdown":"Останавливает бота",
             "/panel":"Панель управления ботом",
-            "/spam":"Массовая рассылка сообщения всем пользователям"
+            "/announce":"Массовая рассылка сообщения всем пользователям"
         }
 
         # Creates instances
@@ -101,9 +102,13 @@ class TelegramBot:
         self.bot_dispatcher.register_message_handler(
             self.__on_cancel_button, regexp=r'^([Оо]тмена)$') # Registre cancel command in main menu
         self.bot_dispatcher.register_message_handler(
-            self.__on_command_spam, is_admin, commands=['spam'])
+            self.__on_command_announce, is_admin, commands=['announce'])
         self.bot_dispatcher.register_message_handler(
             self.__on_command_shutdown, is_admin, commands=['shutdown'])
+        self.bot_dispatcher.register_message_handler(
+            self.__on_command_me, commands="me")
+        self.bot_dispatcher.register_message_handler(
+            self.__on_command_reset, commands="reset")
 
 
     def _reg_states_handlers(self) -> None:
@@ -117,11 +122,13 @@ class TelegramBot:
         self.bot_dispatcher.register_message_handler(
             self.__on_del_group_state, state=States.del_group)
         self.bot_dispatcher.register_message_handler(
-            self.__on_state_spam, state=States.spam)
+            self.__on_state_pre_announcement, state=States.pre_announcement)
         self.bot_dispatcher.register_message_handler(
-            self.__on_state_accept_spam, state=States.accept_spam)
+            self.__on_state_announcement, state=States.announcement)
         self.bot_dispatcher.register_message_handler(
             self.__on_shutdown_state, state=States.shutdown)
+        self.bot_dispatcher.register_message_handler(
+            self.__on_reset_state, state=States.reset)
 
     async def send_available_commands(self, message: types.Message) -> None:
         msg_text: str = f"Вам доступны текущие комманды\n\nПользовательские:\n"
@@ -517,65 +524,85 @@ class TelegramBot:
                 # I don't remember why it's needed. But I'll leave it just in case.
                 logging.error(e)
 
-    async def __on_command_spam(self, message: types.Message, state: FSMContext):
+    async def __on_command_announce(self, message: types.Message, state: FSMContext):
         """
-        Launch when admin type command /spam for sending message to all bot users
+        Launch when admin type command /announce for sending message to all bot users
 
         Args:
-            message (types.Message): message from admin with /spam command as text
+            message (types.Message): message from admin with /announce command as text
         """
-        spam_msg: Optional[types.Message] = None
-        if message.reply_to_message:
-            spam_msg = message.reply_to_message
-        elif message.text.strip() != "/spam":
-            message.text = message.text.replace("/spam", "")
-            spam_msg = message
+        announcement: Optional[types.Message] = None
+        if message.reply_to_message: # If command has reply to other message
+            announcement = message.reply_to_message
+        elif message.text.strip() != "/announce": # If command has arguments
+            message.text = message.text.replace("/announce", "", 1) # remove command from message text
+            announcement = message
 
-        if spam_msg:
-            msg = await spam_msg.send_copy(message.from_user.id)
-            await msg.reply("Вы уверены что хотите отправить это сообщение всем своим пользователям?", reply_markup=Keyboard.yes_or_no)
+        if announcement is not None:
+            announce_copy = await announcement.send_copy(self.admin_id) # Send admin example of announcment message
+            await announce_copy.reply(
+                "Вы уверены что хотите отправить это сообщение всем своим пользователям?", 
+                reply_markup=Keyboard.yes_or_no)
+
             async with state.proxy() as data:
-                data['msg_id'] = msg.message_id
-            await States.accept_spam.set()
+                data['announce_id'] = announce_copy.message_id # Save id of announcement copy msg
+            await States.announcement.set()
             return
 
+        # If admin enter command withoud arguments and reply
         await message.answer('Ожидаю текста для рассылки', reply_markup=Keyboard.cancel)
-        await States.spam.set()
+        await States.pre_announcement.set()
 
-    async def __on_state_accept_spam(self, message: types.Message, state: FSMContext):
-        if message.text.lower() == "да":
-            await message.answer("Отправляю")
-            user_id = message.from_user.id
+    async def __on_state_announcement(self, message: types.Message, state: FSMContext):
+        """
+        Send admin's announcement to bot users
+
+        Args:
+            message (types.Message): message from admin with answer yes/no
+            state (FSMContext): bot state
+        """
+        if message.text.lower() == "да": # If admin tap on yes button
+            await message.answer("Отправляю", reply_markup=Keyboard.cancel)
+
+            # Get id of announcement message
             async with state.proxy() as data:
-                spam_msg_id: int = data['msg_id'] 
+                announce_msg_id: int = data['announce_id'] 
+
             # Get list of all users in database
             users: List[DataBaseUser] = self.database.get_all_users()
+            counter: int = 0 # Create counter for log
             for user in users:
-                if user.user_id == user_id:
-                    continue
+                if user.user_id == self.admin_id:
+                    continue # Skip send announce to admin
                 try:
                     # Sends a full copy of the message to the user on behalf of the bot
-                    await self.bot_api.copy_message(user.user_id, user_id, spam_msg_id)
+                    await self.bot_api.copy_message(user.user_id, self.admin_id, announce_msg_id)
+                    counter += 1
                 except:
                     logging.error(f'Cant send to {user.user_id}')
             await message.answer("Отправленно", reply_markup=Keyboard.main_menu)
-        else:
+            logging.info(f"Send announcement to {counter} users")
+
+        else: # If admin send no or somthing else 
             await message.answer("Отмена", reply_markup=Keyboard.main_menu)
         await state.finish()
 
-    async def __on_state_spam(self, message: types.Message, state: FSMContext):
+    async def __on_state_pre_announcement(self, message: types.Message, state: FSMContext):
         """
-        Sends the entered message to all bot users
+        Waiting announcement from admin
 
         Args:
-            message (types.Message): user message for spam
+            message (types.Message): message from admin with announcement
             state (FSMContext): bot's state
         """
-        msg = await message.send_copy(message.from_user.id)
-        await msg.reply("Вы уверены что хотите отправить это сообщение всем своим пользователям?", reply_markup=Keyboard.yes_or_no)
+        announce_copy = await message.send_copy(message.from_user.id)
+        await announce_copy.reply(
+            "Вы уверены что хотите отправить это сообщение всем своим пользователям?", 
+            reply_markup=Keyboard.yes_or_no)
+
         async with state.proxy() as data:
             data['msg_id'] = message.message_id
-        await States.accept_spam.set()
+        await States.announcement.set()
         
     async def _get_post(self, group: DataBaseGroup, pinned: bool = False) -> TelegramPost:
         """
@@ -622,6 +649,54 @@ class TelegramBot:
             logging.info("Bot stopping by admin command")
             self.loop.stop()
             self.loop.close()
+        await state.finish()
+
+    async def __on_command_me(self, message: types.Message) -> None:
+        """
+        Sends information to the user about him that is stored in the database of the bot
+
+        Args:
+            message (types.Message): message from user
+        """
+        user_info: DataBaseUser = self.database.get_user(message.from_user.id)
+        msg_text: str = f"Привет {message.from_user.first_name}!\nВот какую информацию я храню о тебе \n"
+        msg_text += f"Айди пользователя: {user_info.user_id} - Уникальный для каждого, с помощью него я могу писать тебе и могу получить никнейм, информацию в 'о себе', фото профиля и тд.\n"
+        msg_text += f"Список 'доменов' групп и дата их последнего обновления:\n"
+        # Generate list of user's group
+        for i, group in enumerate(user_info.groups, 1):
+            msg_text += f"{i}. {group.domain} | {group.last_update_date}\n"
+        msg_text += "И на этом все"
+        await message.answer(msg_text)
+
+    async def __on_command_reset(self, message: types.Message) -> None:
+        """
+        Delete user from database
+
+        Args:
+            message (types.Message): message from user
+        """
+        if self.database.is_user_exists(message.from_user.id):
+            await message.reply("Вы уверены что хотите удалить информацию о себе? Это сбросит все ваши подписки и удалит вас из бота.", reply_markup=Keyboard.yes_or_no)
+            await States.reset.set()
+        else:
+            await message.reply("Вы и так не являетесь пользователем бота, мне нечего удалять")
+
+    async def __on_reset_state(self, message: types.Message, state: FSMContext) -> None:
+        """
+        Delete user from databes 
+
+        Args:
+            message (types.Message): message with yes/no answer
+            state (FSMContext): state of bot
+        """
+        if message.text.lower() == "да":
+            user_groups = self.database.get_user(message.from_user.id).groups
+            for group in user_groups:
+                self.database.del_member_of_group(group.domain, message.from_user.id)
+            self.database.del_user(message.from_user.id)
+            await message.answer("Готово", reply_markup=Keyboard.main_menu)
+        else:
+            await message.answer("Отмена", reply_markup=Keyboard.main_menu)
         await state.finish()
 
 
